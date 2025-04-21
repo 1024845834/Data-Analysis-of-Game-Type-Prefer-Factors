@@ -65,9 +65,9 @@ results_time <- map_df(game_columns, ~ {
   )
 })
 
-# Bonferroni校正
+# Bonferroni correction
 results_time <- results_time %>%
-  mutate(p值校正 = p.adjust(p_value, method = "bonferroni"))
+  mutate(p_value_correction = p.adjust(p_value, method = "bonferroni"))
 
 ```
 
@@ -147,9 +147,9 @@ results_gender <- map_df(game_columns, ~ {
   )
 })
 
-# Bonferroni校正
+# Bonferroni correction
 results_gender <- results_gender %>%
-  mutate(p值校正 = p.adjust(p_value, method = "bonferroni"))
+  mutate(p_value_correction = p.adjust(p_value, method = "bonferroni"))
 
 ```
 
@@ -161,21 +161,20 @@ results_t_gender <- map_df(game_columns, ~ {
     select(Gender, !!sym(.x)) %>%
     drop_na()
   
-  # 正态性检验（Shapiro-Wilk）
+  # Test for normality（Shapiro-Wilk）
   shapiro_p <- df %>%
     group_by(Gender) %>%
     summarise(p = shapiro.test(!!sym(.x))$p.value) %>%
     pull(p)
   
-  # 若任一组不满足正态性（p < 0.05），使用Mann-Whitney U检验
+  # If normality (p < 0.05) is not satisfied in either group, use the Mann-Whitney U test 
   if (any(shapiro_p < 0.05)) {
     test <- wilcox.test(as.formula(paste(.x, "~ Gender")), data = df)
     method <- "Mann-Whitney U"
-    effect_size <- (test$statistic / (nrow(df) * 0.5))  # 秩次效应量
+    effect_size <- (test$statistic / (nrow(df) * 0.5))  
   } else {
-    # 方差齐性检验（Levene）
+    # Homogeneity test for variance（Levene）
     levene_p <- car::leveneTest(as.formula(paste(.x, "~ Gender")), data = df)$`Pr(>F)`[1]
-    # 选择t检验类型
     if (levene_p < 0.05) {
       test <- t.test(as.formula(paste(.x, "~ Gender")), data = df, var.equal = FALSE)
       method <- "Welch t-test"
@@ -187,19 +186,19 @@ results_t_gender <- map_df(game_columns, ~ {
   }
   
   tibble(
-    游戏类型 = .x,
-    均值_男 = mean(df[[.x]][df$Gender == "Male"]),
-    均值_女 = mean(df[[.x]][df$Gender == "Female"]),
-    检验方法 = method,
-    统计量 = test$statistic,
-    p值 = test$p.value,
+    Game_Type = .x,
+    Average_Male = mean(df[[.x]][df$Gender == "Male"]),
+    Average_Female = mean(df[[.x]][df$Gender == "Female"]),
+    Method = method,
+    Statistic = test$statistic,
+    p_value = test$p.value,
     效应量 = effect_size
   )
 })
 
-# Bonferroni校正
+# Bonferroni correction
 results_t_gender <- results_t_gender %>%
-  mutate(p值校正 = p.adjust(p值, method = "bonferroni"))
+  mutate(p_value_correction = p.adjust(p_value, method = "bonferroni"))
 
 ```
 
