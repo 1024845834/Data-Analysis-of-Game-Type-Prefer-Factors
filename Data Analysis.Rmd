@@ -241,18 +241,16 @@ ggplot(data_long, aes(x = Gender, y = Rating, fill = Gender)) +
 
 ```{r}
 
-
-#分面柱形图
+#Faceted column chart
 
 data_long <- data %>%
   pivot_longer(
-    cols = 4:11,  # 假设游戏类型列为第4到第11列
+    cols = 4:11, 
     names_to = "Game_Type",
     values_to = "Rating"
   ) %>%
-  filter(!is.na(Rating))  # 排除缺失值
+  filter(!is.na(Rating)) 
 
-# 2. 计算性别 × 游戏类型的平均评分
 data_summary <- data_long %>%
   group_by(Gender, Game_Type) %>%
   summarise(
@@ -261,25 +259,24 @@ data_summary <- data_long %>%
     .groups = "drop"
   )
 
-# 3. 绘制分面柱状图
 ggplot(data_summary, aes(x = Gender, y = Mean_Rating, fill = Gender)) +
   geom_col(position = "dodge", width = 0.7) +
   geom_errorbar(
     aes(ymin = Mean_Rating - SD, ymax = Mean_Rating + SD),
     width = 0.2, position = position_dodge(0.7)
   ) +
-  facet_wrap(~ Game_Type, scales = "free_y", ncol = 4) +  # 按游戏类型分面
-  scale_fill_manual(values = c("#1f78b4", "#e31a1c")) +  # 蓝-红色性别区分
+  facet_wrap(~ Game_Type, scales = "free_y", ncol = 4) +  
+  scale_fill_manual(values = c("#1f78b4", "#e31a1c")) +  
   labs(
-    title = "不同性别在各游戏类型中的平均评分对比",
-    x = "性别",
-    y = "平均评分（1-5分）",
-    fill = "性别"
+    title = "Comparison of the average ratings of different genders across game genres",
+    x = "Gender",
+    y = "Average Grade",
+    fill = "Gender"
   ) +
   theme_minimal() +
   theme(
     axis.text.x = element_text(angle = 45, hjust = 1),
-    strip.text = element_text(size = 8)  # 分面标题字号
+    strip.text = element_text(size = 8)  
   )
 
 
