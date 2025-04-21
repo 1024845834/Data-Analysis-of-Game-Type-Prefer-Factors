@@ -122,15 +122,14 @@ data <- data %>%
 ```{r}
 
 results_gender <- map_df(game_columns, ~ {
-  # 提取有效数据
   df <- data %>%
     select(Gender, !!sym(.x)) %>%
     drop_na()
   
-  # 生成列联表
+  # Generate a contingency table
   tbl <- table(df$Gender, df[[.x]])
   
-  # 卡方检验（检查期望频数）
+  # Chi-square test
   if (any(chisq.test(tbl)$expected < 5)) {
     test <- fisher.test(tbl)
     method <- "Fisher"
@@ -192,7 +191,7 @@ results_t_gender <- map_df(game_columns, ~ {
     Method = method,
     Statistic = test$statistic,
     p_value = test$p.value,
-    效应量 = effect_size
+    Effect_size = effect_size
   )
 })
 
