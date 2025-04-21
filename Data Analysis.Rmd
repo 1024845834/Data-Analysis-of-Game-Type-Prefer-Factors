@@ -1,0 +1,292 @@
+
+
+
+```{r}
+
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+library(purrr)
+library(ggradar)
+data <- read.csv("../data/data.csv")
+
+```
+
+
+```{r}
+
+data <- data %>%
+  mutate(
+    Gender = factor(Gender, 
+                    levels = c(1, 2, 3, 4), 
+                    labels = c("Male", "Female", "Other", "Don't want to tell")),
+    Age = factor(Age, 
+                 levels = c(1, 2, 3), 
+                 labels = c("Under 18", "18~25", "Above 25"), 
+                 ordered = TRUE),
+    Game.Time = factor(`Game.Time`, 
+                       levels = c(1, 2, 3, 4, 5), 
+                       labels = c("Less than 5 hours", "5~10 hours", "11~20 hours", "21~40 hours", "More than 40 hours"), 
+                       ordered = TRUE)
+  ) %>%
+  mutate(across(4:11, ~ ifelse(.x == "NP", NA, as.numeric(.x))))  # Replace NP with NA
+
+```
+
+```{r}
+
+table(data$Age)
+table(data$Gender)
+game_columns <- c("Action_Shooter", "Roleplaying", "Simulation_Management", 
+                  "Strategy", "Music_Party", "Sports_Racing", "Horror_Adventure", 
+                  "Casual_Puzzle")
+
+```
+
+
+
+```{r}
+
+results_time <- map_df(game_columns, ~ {
+  df <- data %>%
+    select(Game.Time, !!sym(.x)) %>%
+    drop_na()
+  
+  # Generate a contingency table
+  tbl <- table(df$Game.Time, df[[.x]])
+  
+  # Chi-square test
+  test <- chisq.test(tbl, simulate.p.value = TRUE, B = 1e5)
+  
+  tibble(
+    Game_Type = .x,
+    Chisquare_value = test$statistic,
+    p_value = test$p.value,
+  )
+})
+
+# Bonferroni校正
+results_time <- results_time %>%
+  mutate(p值校正 = p.adjust(p_value, method = "bonferroni"))
+
+```
+
+
+
+
+
+
+```{r}
+
+#Faceted line chart
+
+data_long <- data %>%
+  pivot_longer(
+    cols = 4:11,
+    names_to = "Game_Type",
+    values_to = "Rating"
+  ) %>%
+  filter(!is.na(Rating))  
+
+data_summary <- data_long %>%
+  group_by(Game.Time, Game_Type) %>%
+  summarise(Mean_Rating = mean(Rating, na.rm = TRUE), .groups = "drop")
+
+ggplot(data_summary, aes(x = Game.Time, y = Mean_Rating, group = 1)) +
+  geom_line(color = "#2ca25f", linewidth = 1.2) +  
+  geom_point(size = 3, color = "#2ca25f") +  
+  facet_wrap(~ Game_Type, ncol = 4) +  
+  labs(
+    title = "Average rating trends across game genres for different playtime",
+    x = "Weekly playtime",
+    y = "Average rating (1-5 points)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),  
+    strip.text = element_text(size = 8)  
+  )
+
+```
+
+```{r}
+
+data <- data %>%
+  filter(Gender %in% c("Male", "Female")) 
+
+```
+
+
+
+
+```{r}
+
+results_gender <- map_df(game_columns, ~ {
+  # 提取有效数据
+  df <- data %>%
+    select(Gender, !!sym(.x)) %>%
+    drop_na()
+  
+  # 生成列联表
+  tbl <- table(df$Gender, df[[.x]])
+  
+  # 卡方检验（检查期望频数）
+  if (any(chisq.test(tbl)$expected < 5)) {
+    test <- fisher.test(tbl)
+    method <- "Fisher"
+  } else {
+    test <- chisq.test(tbl)
+    method <- "Chi-square"
+  }
+  
+  tibble(
+    Game_Type = .x,
+    Chisquare_value = ifelse(method == "Chi-square", test$statistic, NA),
+    p_value = test$p.value,
+    Method = method,
+  )
+})
+
+# Bonferroni校正
+results_gender <- results_gender %>%
+  mutate(p值校正 = p.adjust(p_value, method = "bonferroni"))
+
+```
+
+
+```{r}
+
+results_t_gender <- map_df(game_columns, ~ {
+  df <- data %>%
+    select(Gender, !!sym(.x)) %>%
+    drop_na()
+  
+  # 正态性检验（Shapiro-Wilk）
+  shapiro_p <- df %>%
+    group_by(Gender) %>%
+    summarise(p = shapiro.test(!!sym(.x))$p.value) %>%
+    pull(p)
+  
+  # 若任一组不满足正态性（p < 0.05），使用Mann-Whitney U检验
+  if (any(shapiro_p < 0.05)) {
+    test <- wilcox.test(as.formula(paste(.x, "~ Gender")), data = df)
+    method <- "Mann-Whitney U"
+    effect_size <- (test$statistic / (nrow(df) * 0.5))  # 秩次效应量
+  } else {
+    # 方差齐性检验（Levene）
+    levene_p <- car::leveneTest(as.formula(paste(.x, "~ Gender")), data = df)$`Pr(>F)`[1]
+    # 选择t检验类型
+    if (levene_p < 0.05) {
+      test <- t.test(as.formula(paste(.x, "~ Gender")), data = df, var.equal = FALSE)
+      method <- "Welch t-test"
+    } else {
+      test <- t.test(as.formula(paste(.x, "~ Gender")), data = df, var.equal = TRUE)
+      method <- "Student t-test"
+    }
+    effect_size <- effsize::cohen.d(as.formula(paste(.x, "~ Gender")), data = df)$estimate
+  }
+  
+  tibble(
+    游戏类型 = .x,
+    均值_男 = mean(df[[.x]][df$Gender == "Male"]),
+    均值_女 = mean(df[[.x]][df$Gender == "Female"]),
+    检验方法 = method,
+    统计量 = test$statistic,
+    p值 = test$p.value,
+    效应量 = effect_size
+  )
+})
+
+# Bonferroni校正
+results_t_gender <- results_t_gender %>%
+  mutate(p值校正 = p.adjust(p值, method = "bonferroni"))
+
+```
+
+
+```{r}
+
+#RadarChart
+
+data_radar <- data %>%
+  group_by(Gender) %>%
+  summarise(across(all_of(game_columns), ~ mean(., na.rm = TRUE))) %>%
+  rename_with(~ gsub("_", " ", .x)) 
+
+ggradar(data_radar, base.size = 10, values.radar = c("2", "3", "4")) +
+  labs(title = "The average rating of different game genres by gender") +
+  theme(legend.position = "right")
+```
+```{r}
+
+#Violin Plot
+
+ggplot(data_long, aes(x = Gender, y = Rating, fill = Gender)) +
+  geom_violin(trim = FALSE, alpha = 0.7) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.shape = NA) +  # 叠加箱线图
+  facet_wrap(~ Game_Type, ncol = 4) +
+  scale_fill_manual(values = c("#1f78b4", "#e31a1c")) +
+  labs(
+    title = "The distribution of ratings by gender across game genres",
+    x = "Gender",
+    y = "Grade"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 8)
+  )
+
+```
+
+
+```{r}
+
+
+#分面柱形图
+
+data_long <- data %>%
+  pivot_longer(
+    cols = 4:11,  # 假设游戏类型列为第4到第11列
+    names_to = "Game_Type",
+    values_to = "Rating"
+  ) %>%
+  filter(!is.na(Rating))  # 排除缺失值
+
+# 2. 计算性别 × 游戏类型的平均评分
+data_summary <- data_long %>%
+  group_by(Gender, Game_Type) %>%
+  summarise(
+    Mean_Rating = mean(Rating, na.rm = TRUE),
+    SD = sd(Rating, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# 3. 绘制分面柱状图
+ggplot(data_summary, aes(x = Gender, y = Mean_Rating, fill = Gender)) +
+  geom_col(position = "dodge", width = 0.7) +
+  geom_errorbar(
+    aes(ymin = Mean_Rating - SD, ymax = Mean_Rating + SD),
+    width = 0.2, position = position_dodge(0.7)
+  ) +
+  facet_wrap(~ Game_Type, scales = "free_y", ncol = 4) +  # 按游戏类型分面
+  scale_fill_manual(values = c("#1f78b4", "#e31a1c")) +  # 蓝-红色性别区分
+  labs(
+    title = "不同性别在各游戏类型中的平均评分对比",
+    x = "性别",
+    y = "平均评分（1-5分）",
+    fill = "性别"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(size = 8)  # 分面标题字号
+  )
+
+
+```
+
+
+
+
+
